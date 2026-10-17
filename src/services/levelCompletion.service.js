@@ -53,7 +53,7 @@ async function verifyLevelCompletion(userId, lessonId) {
   return { ok: true, lesson };
 }
 
-async function completeLevel(userId, lessonId) {
+async function completeLevel(userId, lessonId, score) {
   const verdict = await verifyLevelCompletion(userId, lessonId);
 
   if (!verdict.ok) {
@@ -61,6 +61,18 @@ async function completeLevel(userId, lessonId) {
       throw AppError.notFound(verdict.message);
     }
     throw AppError.badRequest(verdict.message, { reason: verdict.code });
+  }
+
+  // Phải hoàn thành trên 70% bài học mới có thể hoàn thành, không thì thất bại
+  if (score !== undefined && score !== null) {
+    const numericScore = Number(score);
+    if (!isNaN(numericScore) && numericScore <= 70) {
+      throw AppError.badRequest("Chưa đạt yêu cầu hoàn thành bài học (cần hoàn thành trên 70%).", {
+        reason: "SCORE_BELOW_THRESHOLD",
+        score: numericScore,
+        requiredScore: 70,
+      });
+    }
   }
 
   // Kiểm tra xem người chơi đã từng nhận xu thưởng cho bài học này chưa

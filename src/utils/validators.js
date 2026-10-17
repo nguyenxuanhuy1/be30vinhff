@@ -180,7 +180,7 @@ function validateArticleCategory(category) {
     return "TIN TỨC";
   }
   const clean = category.trim().toUpperCase();
-  const validCategories = ["TIN TỨC", "KHÁM PHÁ", "CỘNG ĐỒNG", "SỰ KIỆN"];
+  const validCategories = ["TIN TỨC", "KHÁM PHÁ", "CỘNG ĐỒNG", "SỰ KIỆN", "HƯỚNG DẪN"];
   if (validCategories.includes(clean)) {
     return clean;
   }

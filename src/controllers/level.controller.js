@@ -3,7 +3,8 @@ const { sendSuccess } = require("../utils/response");
 
 // POST /api/levels/:id/complete -> cấp đồ mở khoá theo màn, trả { rewards }
 async function completeLevel(req, res) {
-  const result = await levelCompletionService.completeLevel(req.user.id, req.params.id);
+  const { score } = req.body || {};
+  const result = await levelCompletionService.completeLevel(req.user.id, req.params.id, score);
   return sendSuccess(res, result, "Đã hoàn thành màn");
 }
 
