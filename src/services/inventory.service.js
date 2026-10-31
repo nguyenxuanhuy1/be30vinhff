@@ -137,6 +137,7 @@ async function unequipItem(userId, itemId) {
 }
 
 module.exports = {
+  extractItemSlug,
   listInventory,
   equipItem,
   unequipItem,

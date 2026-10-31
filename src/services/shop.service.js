@@ -3,17 +3,7 @@ const path = require("path");
 const { prisma } = require("../config/db");
 const { env } = require("../config/env");
 const { AppError } = require("../utils/AppError");
-
-/**
- * Trích xuất slug từ imageUrl (nếu thuộc folder /items/)
- * Ví dụ: "/items/hat_circle.webp" -> "hat_circle"
- * "/items/glasses_kinh.png" -> "glasses_kinh"
- */
-function extractItemSlug(imageUrl) {
-  if (!imageUrl || typeof imageUrl !== "string") return null;
-  const match = imageUrl.match(/(?:^|\/)items\/([^/]+?)(?:\.[a-zA-Z0-9]+)?$/);
-  return match ? match[1] : null;
-}
+const { extractItemSlug } = require("./inventory.service");
 
 /**
  * Tự động đồng bộ item vào catalog.json nếu là đồ trang bị và chưa có
@@ -312,12 +302,11 @@ async function deleteItem(id) {
 /**
  * Người dùng mua sản phẩm bằng xu
  * - Kiểm tra đã sở hữu chưa (mua rồi không cho mua lại)
- * - Kiểm tra đủ xu
- * - Nếu đồ đặc biệt: bắt buộc có contactInfo
- * - Trừ xu người dùng
- * - Giảm tồn kho
- * - Lưu đơn hàng
- * - Tự động cấp vào Tủ đồ (userItem) nếu là trang bị
+ * - Kiểm tra thông tin liên lạc nếu là đồ đặc biệt
+ * - Giảm tồn kho atomic bằng updateMany (stock > 0)
+ * - Trừ xu người dùng atomic bằng updateMany (coins >= price)
+ * - Lưu đơn hàng (bảo vệ bởi partial unique index ở DB chống race condition)
+ * - Tự động cấp vào Tủ đồ (userItem) nếu là trang bị thường
  */
 async function purchaseItem({ userId, itemId, contactInfo, note }) {
   if (!itemId) {
@@ -333,8 +322,8 @@ async function purchaseItem({ userId, itemId, contactInfo, note }) {
       throw AppError.notFound("Vật phẩm không tồn tại hoặc đã ngừng bán.");
     }
 
-    // 2. KIỂM TRA ĐÃ SỞ HỮU CHƯA (CHẶN MUA LẠI)
-    // A. Kiểm tra đơn hàng cũ
+    // 2. Kiểm tra đã sở hữu chưa
+    // A. Kiểm tra đơn hàng cũ đang hiệu lực (PENDING, PROCESSING, COMPLETED)
     const existingOrder = await tx.shopOrder.findFirst({
       where: {
         userId,
@@ -357,12 +346,7 @@ async function purchaseItem({ userId, itemId, contactInfo, note }) {
       }
     }
 
-    // 3. Kiểm tra tồn kho
-    if (item.stock !== null && item.stock <= 0) {
-      throw AppError.badRequest("Vật phẩm này hiện đã hết hàng.");
-    }
-
-    // 4. Kiểm tra thông tin liên lạc nếu là đồ đặc biệt
+    // 3. Kiểm tra thông tin liên lạc nếu là đồ đặc biệt
     const cleanContact = (contactInfo || "").trim();
     if (item.isSpecial && !cleanContact) {
       throw AppError.badRequest(
@@ -371,65 +355,61 @@ async function purchaseItem({ userId, itemId, contactInfo, note }) {
       );
     }
 
-    // 5. Tìm người dùng và kiểm tra số xu
-    const user = await tx.user.findUnique({
-      where: { id: userId },
-      select: { id: true, username: true, coins: true },
-    });
-    if (!user) {
-      throw AppError.notFound("Không tìm thấy tài khoản người dùng.");
-    }
-
-    if (user.coins < item.coinPrice) {
-      throw AppError.badRequest(
-        `Bạn không đủ xu để mua vật phẩm này! Cần ${item.coinPrice.toLocaleString("vi-VN")} xu nhưng bạn chỉ có ${user.coins.toLocaleString("vi-VN")} xu.`
-      );
-    }
-
-    // 6. Trừ xu của người dùng
-    const updatedUser = await tx.user.update({
-      where: { id: userId },
-      data: {
-        coins: {
-          decrement: item.coinPrice,
+    // 4. Giảm tồn kho atomic bằng updateMany với điều kiện stock > 0
+    if (item.stock !== null && item.stock !== undefined) {
+      const stockUpdate = await tx.shopItem.updateMany({
+        where: {
+          id: itemId,
+          stock: { gt: 0 },
         },
-      },
-      select: {
-        id: true,
-        username: true,
-        coins: true,
-      },
-    });
-
-    // 7. Giảm tồn kho nếu có giới hạn
-    if (item.stock !== null) {
-      await tx.shopItem.update({
-        where: { id: itemId },
         data: {
-          stock: {
-            decrement: 1,
-          },
+          stock: { decrement: 1 },
         },
       });
+      if (stockUpdate.count === 0) {
+        throw AppError.badRequest("Vật phẩm này hiện đã hết hàng.");
+      }
     }
 
-    // 8. Tạo đơn hàng (vật phẩm thường tự động hoàn thành ngay)
-    const order = await tx.shopOrder.create({
-      data: {
-        userId,
-        itemId,
-        coinPrice: item.coinPrice,
-        isSpecial: item.isSpecial,
-        contactInfo: item.isSpecial ? cleanContact : null,
-        note: item.isSpecial ? ((note || "").trim() || null) : null,
-        status: item.isSpecial ? "PENDING" : "COMPLETED",
+    // 5. Trừ xu người dùng atomic bằng updateMany với điều kiện coins >= price
+    const coinUpdate = await tx.user.updateMany({
+      where: {
+        id: userId,
+        coins: { gte: item.coinPrice },
       },
-      include: {
-        item: true,
+      data: {
+        coins: { decrement: item.coinPrice },
       },
     });
+    if (coinUpdate.count === 0) {
+      throw AppError.badRequest("Bạn không đủ xu để mua vật phẩm này!");
+    }
 
-    // 9. CHỈ TỰ ĐỘNG MỞ VÀO TỦ ĐỒ CHO ĐƠN HÀNG THƯỜNG (!item.isSpecial), KHÔNG MỞ VỚI ĐƠN HÀNG ĐẶC BIỆT
+    // 6. Tạo đơn hàng (Được bảo vệ bởi partial unique index tại DB)
+    let order;
+    try {
+      order = await tx.shopOrder.create({
+        data: {
+          userId,
+          itemId,
+          coinPrice: item.coinPrice,
+          isSpecial: item.isSpecial,
+          contactInfo: item.isSpecial ? cleanContact : null,
+          note: item.isSpecial ? ((note || "").trim() || null) : null,
+          status: item.isSpecial ? "PENDING" : "COMPLETED",
+        },
+        include: {
+          item: true,
+        },
+      });
+    } catch (err) {
+      if (err.code === "P2002") {
+        throw AppError.badRequest("Bạn đã sở hữu vật phẩm này rồi, không thể mua lại nữa.");
+      }
+      throw err;
+    }
+
+    // 7. Cấp vào tủ đồ cho đơn hàng thường (!item.isSpecial)
     if (!item.isSpecial && slug) {
       await tx.userItem.upsert({
         where: { userId_itemId: { userId, itemId: slug } },
@@ -442,9 +422,14 @@ async function purchaseItem({ userId, itemId, contactInfo, note }) {
       });
     }
 
+    const updatedUser = await tx.user.findUnique({
+      where: { id: userId },
+      select: { id: true, username: true, coins: true },
+    });
+
     return {
       order,
-      remainingCoins: updatedUser.coins,
+      remainingCoins: updatedUser ? updatedUser.coins : 0,
       isOwned: true,
       message: item.isSpecial
         ? `Mua thành công "${item.name}"! Thông tin liên lạc của bạn đã được gửi tới Admin để xử lý.`
@@ -470,11 +455,20 @@ async function getUserOrders(userId) {
 
 /**
  * Admin: Xem toàn bộ đơn hàng
+ * Kẹp limit 1–100, page >= 1, validate status
  */
-async function getAdminOrders({ status, search, page = 1, limit = 50 } = {}) {
+async function getAdminOrders({ status, search, page = 1, limit = 20 } = {}) {
+  const parsedPage = parseInt(page, 10);
+  const parsedLimit = parseInt(limit, 10);
+  const safePage = Number.isNaN(parsedPage) || parsedPage < 1 ? 1 : parsedPage;
+  const safeLimit = Number.isNaN(parsedLimit) || parsedLimit < 1 ? 20 : Math.min(parsedLimit, 100);
+
   const where = {};
   if (status && status !== "ALL") {
-    where.status = status;
+    const validStatuses = ["PENDING", "PROCESSING", "COMPLETED", "CANCELLED"];
+    if (validStatuses.includes(status.trim())) {
+      where.status = status.trim();
+    }
   }
   if (search && search.trim()) {
     where.OR = [
@@ -501,8 +495,8 @@ async function getAdminOrders({ status, search, page = 1, limit = 50 } = {}) {
       orderBy: {
         createdAt: "desc",
       },
-      skip: (page - 1) * limit,
-      take: limit,
+      skip: (safePage - 1) * safeLimit,
+      take: safeLimit,
     }),
     prisma.shopOrder.count({ where }),
   ]);
@@ -510,14 +504,15 @@ async function getAdminOrders({ status, search, page = 1, limit = 50 } = {}) {
   return {
     orders,
     total,
-    page,
-    limit,
-    totalPages: Math.ceil(total / limit),
+    page: safePage,
+    limit: safeLimit,
+    totalPages: Math.ceil(total / safeLimit),
   };
 }
 
 /**
  * Admin: Cập nhật trạng thái đơn hàng (PENDING, PROCESSING, COMPLETED, CANCELLED)
+ * Khi chuyển sang CANCELLED: hoàn xu, trả stock, gỡ đồ khỏi tủ (tất cả trong 1 transaction, so khớp slug chính xác).
  */
 async function updateOrderStatus(orderId, status) {
   const validStatuses = ["PENDING", "PROCESSING", "COMPLETED", "CANCELLED"];
@@ -525,62 +520,95 @@ async function updateOrderStatus(orderId, status) {
     throw AppError.badRequest(`Trạng thái không hợp lệ. Phải là một trong: ${validStatuses.join(", ")}`);
   }
 
-  const order = await prisma.shopOrder.findUnique({
-    where: { id: orderId },
-    include: { item: true },
-  });
-  if (!order) {
-    throw AppError.notFound("Không tìm thấy đơn hàng");
-  }
-
-  // Nếu chuyển sang COMPLETED và là item trang bị, cấp vào userItem
-  if (status === "COMPLETED" && order.item?.imageUrl) {
-    const slug = extractItemSlug(order.item.imageUrl);
-    if (slug) {
-      await prisma.userItem.upsert({
-        where: { userId_itemId: { userId: order.userId, itemId: slug } },
-        create: {
-          userId: order.userId,
-          itemId: slug,
-          equipped: false,
-        },
-        update: {},
-      });
+  return await prisma.$transaction(async (tx) => {
+    const order = await tx.shopOrder.findUnique({
+      where: { id: orderId },
+      include: { item: true },
+    });
+    if (!order) {
+      throw AppError.notFound("Không tìm thấy đơn hàng");
     }
-  }
 
-  // Nếu chuyển sang CANCELLED hoặc trạng thái hủy, gỡ khỏi userItem nếu không có đơn COMPLETED khác
-  if (status === "CANCELLED" && order.item?.imageUrl) {
-    const slug = extractItemSlug(order.item.imageUrl);
-    if (slug) {
-      const otherCompleted = await prisma.shopOrder.findFirst({
-        where: {
-          id: { not: orderId },
-          userId: order.userId,
-          status: "COMPLETED",
-          item: { imageUrl: { contains: slug } },
-        },
-      });
-      if (!otherCompleted) {
-        await prisma.userItem.deleteMany({
-          where: { userId: order.userId, itemId: slug },
+    const oldStatus = order.status;
+    if (oldStatus === status) {
+      return order;
+    }
+
+    // 1. Chuyển sang COMPLETED: nếu là item trang bị, cấp vào userItem
+    if (status === "COMPLETED" && order.item?.imageUrl) {
+      const slug = extractItemSlug(order.item.imageUrl);
+      if (slug) {
+        await tx.userItem.upsert({
+          where: { userId_itemId: { userId: order.userId, itemId: slug } },
+          create: {
+            userId: order.userId,
+            itemId: slug,
+            equipped: false,
+          },
+          update: {},
         });
       }
     }
-  }
 
-  return await prisma.shopOrder.update({
-    where: { id: orderId },
-    data: { status },
-    include: {
-      user: {
-        select: {
-          id: true,
-          username: true,
+    // 2. Chuyển sang CANCELLED: hoàn xu, trả stock, gỡ đồ khỏi tủ nếu đơn chưa từng bị huỷ
+    if (status === "CANCELLED" && oldStatus !== "CANCELLED") {
+      // A. Hoàn xu lại cho người dùng
+      if (order.coinPrice > 0) {
+        await tx.user.update({
+          where: { id: order.userId },
+          data: { coins: { increment: order.coinPrice } },
+        });
+      }
+
+      // B. Trả lại stock nếu sản phẩm có giới hạn tồn kho
+      if (order.item && order.item.stock !== null && order.item.stock !== undefined) {
+        await tx.shopItem.update({
+          where: { id: order.itemId },
+          data: { stock: { increment: 1 } },
+        });
+      }
+
+      // C. Gỡ đồ khỏi tủ đồ nếu không còn đơn hàng COMPLETED nào khác có cùng slug chính xác
+      if (order.item?.imageUrl) {
+        const slug = extractItemSlug(order.item.imageUrl);
+        if (slug) {
+          const otherCompletedOrders = await tx.shopOrder.findMany({
+            where: {
+              id: { not: orderId },
+              userId: order.userId,
+              status: "COMPLETED",
+            },
+            include: { item: true },
+          });
+
+          const hasOtherCompletedWithSameSlug = otherCompletedOrders.some((o) => {
+            if (!o.item?.imageUrl) return false;
+            return extractItemSlug(o.item.imageUrl) === slug;
+          });
+
+          if (!hasOtherCompletedWithSameSlug) {
+            await tx.userItem.deleteMany({
+              where: { userId: order.userId, itemId: slug },
+            });
+          }
+        }
+      }
+    }
+
+    // 3. Cập nhật trạng thái đơn hàng
+    return await tx.shopOrder.update({
+      where: { id: orderId },
+      data: { status },
+      include: {
+        user: {
+          select: {
+            id: true,
+            username: true,
+          },
         },
+        item: true,
       },
-      item: true,
-    },
+    });
   });
 }
 

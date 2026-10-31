@@ -1,11 +1,11 @@
 const router = require("express").Router();
 const roomController = require("../controllers/room.controller");
 const lessonController = require("../controllers/lesson.controller");
-const { requireAuth, requireRole } = require("../middlewares/auth");
+const { requireAuth, requireRole, optionalAuth } = require("../middlewares/auth");
 
 // Đọc phòng và bài học thì ai cũng xem được, kể cả khách chưa đăng nhập
 router.get("/", roomController.listRooms);
-router.get("/:roomId/lessons", lessonController.listLessons);
+router.get("/:roomId/lessons", optionalAuth, lessonController.listLessons);
 router.get("/:id", roomController.getRoom);
 
 // Thêm/sửa/xoá chỉ dành cho admin

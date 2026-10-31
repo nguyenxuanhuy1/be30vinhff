@@ -4,11 +4,16 @@ const { validateImageUrl, validateCapturedAt } = require("../utils/validators");
 const { JOURNAL_IMAGE_SELECT } = require("../utils/select");
 
 // Lọc theo khoảng thời gian chụp, tham số from/to là chuỗi ISO 8601
-function buildWhere({ userId, from, to }) {
+function buildWhere({ currentUser, targetUserId, from, to }) {
   const where = {};
 
-  if (userId) {
-    where.userId = userId;
+  // Bảo vệ IDOR: Nếu không phải ADMIN, bắt buộc chỉ xem được ảnh của chính mình
+  if (currentUser?.role === "ADMIN") {
+    if (targetUserId) {
+      where.userId = targetUserId;
+    }
+  } else {
+    where.userId = currentUser?.id;
   }
 
   if (from || to) {
@@ -24,8 +29,8 @@ function buildWhere({ userId, from, to }) {
   return where;
 }
 
-async function listImages({ page, pageSize, ...filters }) {
-  const where = buildWhere(filters);
+async function listImages({ page, pageSize, currentUser, targetUserId, from, to }) {
+  const where = buildWhere({ currentUser, targetUserId, from, to });
 
   const [total, data] = await prisma.$transaction([
     prisma.journalImage.count({ where }),
@@ -41,13 +46,18 @@ async function listImages({ page, pageSize, ...filters }) {
   return { data, total };
 }
 
-async function getImageById(id) {
+async function getImageById(id, currentUser = null) {
   const image = await prisma.journalImage.findUnique({
     where: { id },
     select: JOURNAL_IMAGE_SELECT,
   });
 
   if (!image) {
+    throw AppError.notFound("Không tìm thấy ảnh");
+  }
+
+  // Chống IDOR: Không phải chủ sở hữu và không phải ADMIN thì trả 404
+  if (currentUser && currentUser.role !== "ADMIN" && image.userId !== currentUser.id) {
     throw AppError.notFound("Không tìm thấy ảnh");
   }
 
@@ -70,8 +80,8 @@ async function createImage({ imageUrl, capturedAt, userId }) {
   });
 }
 
-async function updateImage(id, { imageUrl, capturedAt }) {
-  await getImageById(id);
+async function updateImage(id, { imageUrl, capturedAt }, currentUser = null) {
+  await getImageById(id, currentUser);
 
   const data = {};
 
@@ -94,16 +104,10 @@ async function updateImage(id, { imageUrl, capturedAt }) {
   });
 }
 
-async function deleteImage(id) {
-  await getImageById(id);
+async function deleteImage(id, currentUser = null) {
+  await getImageById(id, currentUser);
   await prisma.journalImage.delete({ where: { id } });
   return { id };
 }
 
-module.exports = {
-  listImages,
-  getImageById,
-  createImage,
-  updateImage,
-  deleteImage,
-};
+module.exports = { listImages, getImageById, createImage, updateImage, deleteImage };

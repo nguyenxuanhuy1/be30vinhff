@@ -63,16 +63,29 @@ async function completeLevel(userId, lessonId, score) {
     throw AppError.badRequest(verdict.message, { reason: verdict.code });
   }
 
-  // Phải hoàn thành trên 70% bài học mới có thể hoàn thành, không thì thất bại
-  if (score !== undefined && score !== null) {
-    const numericScore = Number(score);
-    if (!isNaN(numericScore) && numericScore <= 70) {
-      throw AppError.badRequest("Chưa đạt yêu cầu hoàn thành bài học (cần hoàn thành trên 70%).", {
-        reason: "SCORE_BELOW_THRESHOLD",
-        score: numericScore,
-        requiredScore: 70,
-      });
-    }
+  // Bắt buộc score là số trong khoảng 0 đến 100
+  if (
+    score === undefined ||
+    score === null ||
+    typeof score !== "number" ||
+    Number.isNaN(score) ||
+    score < 0 ||
+    score > 100
+  ) {
+    throw AppError.badRequest("Điểm số (score) bắt buộc là một số từ 0 đến 100", { field: "score" });
+  }
+
+  // TODO: Hiện tại điểm số (score) do client tự báo nên chưa thể chống gian lận triệt để.
+  // Hướng giải quyết đề xuất:
+  // 1. Cấp sessionToken/labToken có chữ ký bí mật kèm timestamp bắt đầu khi người chơi nhấn vào bài học.
+  // 2. Yêu cầu thời gian chơi tối thiểu (ví dụ: tối thiểu 60-90 giây) trước khi cho phép nộp kết quả.
+  // 3. Client gửi kèm lịch sử sự kiện/hành động giải đố (action logs/seed) để server verify logic thay vì nhận score trực tiếp.
+  if (score < 70) {
+    throw AppError.badRequest("Chưa đạt yêu cầu hoàn thành bài học (cần đạt từ 70% trở lên).", {
+      reason: "SCORE_BELOW_THRESHOLD",
+      score,
+      requiredScore: 70,
+    });
   }
 
   // Kiểm tra xem người chơi đã từng nhận xu thưởng cho bài học này chưa

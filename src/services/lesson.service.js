@@ -12,11 +12,16 @@ const { attachLessonTimeTag } = require("../utils/lesson");
 
 const LESSON_ORDER_BY = [{ order: "asc" }, { createdAt: "asc" }];
 
-async function listLessons(roomId) {
+async function listLessons(roomId, currentUser = null) {
   await getRoomById(roomId);
 
+  const where = { roomId };
+  if (currentUser?.role !== "ADMIN") {
+    where.published = true;
+  }
+
   const lessons = await prisma.lesson.findMany({
-    where: { roomId },
+    where,
     select: LESSON_SELECT,
     orderBy: LESSON_ORDER_BY,
   });
@@ -25,13 +30,18 @@ async function listLessons(roomId) {
 }
 
 // Chi tiết bài học, trả kèm mã html thuần để khung chạy
-async function getLessonById(id) {
+async function getLessonById(id, currentUser = null) {
   const lesson = await prisma.lesson.findUnique({
     where: { id },
     select: LESSON_DETAIL_SELECT,
   });
 
   if (!lesson) {
+    throw AppError.notFound("Không tìm thấy bài học");
+  }
+
+  // Người dùng thường chỉ được xem bài học đã published, ADMIN được xem tất cả
+  if (currentUser?.role !== "ADMIN" && !lesson.published) {
     throw AppError.notFound("Không tìm thấy bài học");
   }
 

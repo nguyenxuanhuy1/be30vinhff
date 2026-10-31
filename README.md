@@ -160,9 +160,12 @@ curl http://localhost:8080/api/auth/me -H 'Authorization: Bearer <token>'
 
 ```bash
 NODE_ENV=production
-JWT_SECRET  # chuỗi ngẫu nhiên dài >= 32 ký tự, server sẽ từ chối start nếu quá ngắn
-CORS_ORIGIN # chỉ định domain frontend, nhiều domain cách nhau bằng dấu phẩy
+JWT_SECRET, JWT_REFRESH_SECRET, LAB_SECRET  # mỗi cái >= 32 ký tự, không trùng nhau
 ```
+
+Backend chỉ nghe `127.0.0.1`, không mở ra ngoài. Trình duyệt gọi `/api` của
+frontend, Next.js proxy sang backend. Frontend chỉ cần đổi `NEXT_PUBLIC_SITE_URL`
+thành domain thật.
 
 Chạy `npm run prisma:deploy` trước khi start.
 

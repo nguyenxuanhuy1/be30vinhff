@@ -9,50 +9,91 @@ function normalizeError(err) {
     return err;
   }
 
+  // Lỗi Prisma Known Request
   if (err instanceof Prisma.PrismaClientKnownRequestError) {
     switch (err.code) {
       case "P2002":
         return AppError.conflict("Dữ liệu đã tồn tại", { fields: err.meta && err.meta.target });
       case "P2025":
-        return AppError.notFound("Không tìm thấy dữ liệu");
+        return AppError.notFound("Không tìm thấy dữ liệu yêu cầu");
       case "P2003":
         return AppError.conflict("Không thể thao tác: còn dữ liệu liên quan");
       case "P2011":
-        return AppError.badRequest("Dữ liệu không hợp lệ");
+      case "P2012":
+      case "P2019":
+        return AppError.badRequest("Dữ liệu không hợp lệ hoặc thiếu trường bắt buộc");
       default:
         return new AppError("Lỗi cơ sở dữ liệu", 500, "DATABASE_ERROR", { prismaCode: err.code });
     }
   }
 
+  // Lỗi Prisma Validation (truyền sai kiểu dữ liệu vào query)
   if (err instanceof Prisma.PrismaClientValidationError) {
-    return AppError.badRequest("Truy vấn không hợp lệ", { reason: "prisma_validation" });
+    return AppError.badRequest("Dữ liệu truy vấn không hợp lệ", { reason: "prisma_validation" });
   }
 
+  // Lỗi JWT
   if (err.name === "TokenExpiredError") {
     return AppError.unauthorized("Token đã hết hạn", "TOKEN_EXPIRED");
   }
 
   if (err.name === "JsonWebTokenError") {
-    return AppError.unauthorized("Token không hợp lệ", "INVALID_TOKEN");
+    return AppError.unauthorized("Token không hợp lệ hoặc bị lỗi định dạng", "INVALID_TOKEN");
   }
 
-  if (err.type === "entity.parse.failed") {
-    return new AppError("Body JSON không hợp lệ", 400, "INVALID_JSON");
+  if (err.name === "NotBeforeError") {
+    return AppError.unauthorized("Token chưa tới thời điểm có hiệu lực", "TOKEN_NOT_ACTIVE");
   }
 
-  return new AppError((err && err.message) || "Lỗi hệ thống", 500, "INTERNAL_ERROR");
+  // Lỗi parse JSON body từ express.json()
+  if (
+    err.type === "entity.parse.failed" ||
+    (err instanceof SyntaxError && (err.status === 400 || err.statusCode === 400) && "body" in err)
+  ) {
+    return AppError.badRequest("Body JSON không hợp lệ", { reason: "invalid_json" });
+  }
+
+  const message = (err && err.message) || "Lỗi hệ thống";
+  const statusCode = err && (err.statusCode || err.status) && typeof (err.statusCode || err.status) === "number"
+    ? (err.statusCode || err.status)
+    : 500;
+
+  return new AppError(message, statusCode, "INTERNAL_ERROR");
+}
+
+function sanitizeBody(body) {
+  if (!body || typeof body !== "object") return undefined;
+  const sanitized = { ...body };
+  const sensitiveKeys = ["password", "token", "refreshToken", "currentPassword", "newPassword"];
+  for (const key of sensitiveKeys) {
+    if (key in sanitized) {
+      sanitized[key] = "[REDACTED]";
+    }
+  }
+  return sanitized;
 }
 
 // Middleware bắt lỗi cuối cùng - express gọi theo thứ tự đăng ký, phải đặt sau tất cả route
 function errorHandler(err, req, res, next) {
   const appError = normalizeError(err);
 
-  // Lỗi 5xx mới log server, lỗi 4xx là lỗi client nên bỏ qua
+  // Lỗi 5xx: log stack trace và bối cảnh request rõ ràng để dễ debug
   if (appError.statusCode >= 500) {
-    console.error("[error]", req.method, req.originalUrl, "\n", err);
+    console.error(`[ERROR 500] ${req.method} ${req.originalUrl}:`, {
+      name: err.name,
+      message: err.message,
+      stack: err.stack,
+      body: sanitizeBody(req.body),
+      query: req.query,
+      headers: {
+        authorization: req.headers.authorization ? "Bearer [REDACTED]" : undefined,
+        cookie: req.headers.cookie ? "[REDACTED]" : undefined,
+        origin: req.headers.origin,
+      },
+    });
   }
 
-  // Production không trả lộ chi tiết lỗi nội bộ
+  // Production không trả lộ chi tiết lỗi nội bộ của hệ thống
   const message = env.isProduction && appError.statusCode >= 500
     ? "Đã có lỗi xảy ra, vui lòng thử lại"
     : appError.message;

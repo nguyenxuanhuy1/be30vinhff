@@ -19,11 +19,30 @@ function validatePassword(password) {
   return password;
 }
 
-function validateImageUrl(imageUrl) {
-  if (!imageUrl || typeof imageUrl !== "string" || imageUrl.trim().length === 0) {
-    throw AppError.badRequest("Thiếu đường dẫn ảnh", { field: "imageUrl" });
+function validateImageUrl(imageUrl, field = "imageUrl") {
+  if (!imageUrl || typeof imageUrl !== "string") {
+    throw AppError.badRequest(`Thiếu đường dẫn ${field}`, { field });
   }
-  return imageUrl.trim();
+  const trimmed = imageUrl.trim();
+  if (trimmed.length === 0) {
+    throw AppError.badRequest(`Đường dẫn ${field} không được để trống`, { field });
+  }
+  // inventoryAvatarUrl tạm thời hỗ trợ base64 trước khi chuyển sang lưu file riêng
+  if (field === "inventoryAvatarUrl" && trimmed.startsWith("data:image/")) {
+    return trimmed;
+  }
+  if (trimmed.length > 2000) {
+    throw AppError.badRequest(`Đường dẫn ${field} tối đa 2000 ký tự`, { field });
+  }
+  const isHttp = /^https?:\/\//i.test(trimmed);
+  const isRelative = trimmed.startsWith("/");
+  if (!isHttp && !isRelative) {
+    throw AppError.badRequest(
+      `Đường dẫn ${field} không hợp lệ. Chỉ chấp nhận URL http(s):// hoặc đường dẫn bắt đầu bằng "/"`,
+      { field }
+    );
+  }
+  return trimmed;
 }
 
 // Ngày không hợp lệ sẽ tạo ra Invalid Date, cần chặn trước khi xuống tầng DB

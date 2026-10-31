@@ -13,12 +13,12 @@ async function getArticle(req, res) {
 }
 
 async function createArticle(req, res) {
-  const article = await articleService.createArticle(req.body, req.user?.id);
+  const article = await articleService.createArticle(req.body || {}, req.user?.id);
   return sendCreated(res, article, "Thêm bài viết thành công");
 }
 
 async function updateArticle(req, res) {
-  const article = await articleService.updateArticle(req.params.id, req.body);
+  const article = await articleService.updateArticle(req.params.id, req.body || {});
   return sendSuccess(res, article, "Cập nhật bài viết thành công");
 }
 

@@ -1,13 +1,9 @@
 const { prisma } = require("../config/db");
 const { AppError } = require("../utils/AppError");
 const { hashPassword } = require("../utils/password");
-const { validateUsername, validatePassword } = require("../utils/validators");
+const { validateUsername, validatePassword, validateImageUrl } = require("../utils/validators");
 const { USER_PUBLIC_SELECT, USER_WITH_IMAGE_COUNT_SELECT } = require("../utils/select");
-
-// Chỉ dùng nội bộ cho luồng đăng nhập, tuyệt đối không trả ra ngoài
-async function findByUsername(username) {
-  return prisma.user.findUnique({ where: { username } });
-}
+const { invalidateUserAuthCache } = require("../middlewares/auth");
 
 function buildWhere({ username, role }) {
   const where = {};
@@ -100,6 +96,7 @@ async function updateUser(id, payload, actor) {
 
   const data = {};
 
+  let tokenVersionIncremented = false;
   if (username !== undefined) {
     validateUsername(username);
     data.username = username;
@@ -107,35 +104,46 @@ async function updateUser(id, payload, actor) {
   if (password !== undefined) {
     validatePassword(password);
     data.password = await hashPassword(password);
+    data.tokenVersion = { increment: 1 };
+    tokenVersionIncremented = true;
   }
   if (avatarUrl !== undefined) {
-    data.avatarUrl = avatarUrl || null;
+    data.avatarUrl = avatarUrl ? validateImageUrl(avatarUrl, "avatarUrl") : null;
   }
   if (inventoryAvatarUrl !== undefined) {
-    data.inventoryAvatarUrl = inventoryAvatarUrl || null;
+    data.inventoryAvatarUrl = inventoryAvatarUrl
+      ? validateImageUrl(inventoryAvatarUrl, "inventoryAvatarUrl")
+      : null;
   }
   if (gender !== undefined) {
     data.gender = gender ? String(gender).toUpperCase() : null;
   }
   if (role !== undefined) {
     data.role = String(role).toUpperCase();
+    if (!tokenVersionIncremented) {
+      data.tokenVersion = { increment: 1 };
+    }
   }
 
   if (Object.keys(data).length === 0) {
     throw AppError.badRequest("Không có trường nào để cập nhật");
   }
 
-  return prisma.user.update({
+  const updated = await prisma.user.update({
     where: { id },
     data,
     select: USER_PUBLIC_SELECT,
   });
+
+  invalidateUserAuthCache(id);
+  return updated;
 }
 
 async function deleteUser(id, actor) {
   await getUserById(id, actor);
   // Ảnh nhật kí bị xoá theo do onDelete: Cascade
   await prisma.user.delete({ where: { id } });
+  invalidateUserAuthCache(id);
   return { id };
 }
 
@@ -233,7 +241,6 @@ async function getAdminOverviewStats() {
 }
 
 module.exports = {
-  findByUsername,
   listUsers,
   getUserById,
   createUser,

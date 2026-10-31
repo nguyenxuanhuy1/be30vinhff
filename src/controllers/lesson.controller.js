@@ -3,7 +3,7 @@ const labService = require("../services/lab.service");
 const { sendSuccess, sendCreated } = require("../utils/response");
 
 async function listLessons(req, res) {
-  const lessons = await lessonService.listLessons(req.params.roomId);
+  const lessons = await lessonService.listLessons(req.params.roomId, req.user);
   return sendSuccess(res, lessons, "Danh sách bài học của phòng");
 }
 
@@ -15,16 +15,17 @@ async function listLabLessons(req, res) {
 }
 
 async function getLesson(req, res) {
-  const lesson = await lessonService.getLessonById(req.params.id);
+  const lesson = await lessonService.getLessonById(req.params.id, req.user);
   return sendSuccess(res, lesson, "Thông tin bài học");
 }
 
 async function createLesson(req, res) {
+  const { name, imageUrl, html, order } = req.body || {};
   const lesson = await lessonService.createLesson(req.params.roomId, {
-    name: req.body.name,
-    imageUrl: req.body.imageUrl,
-    html: req.body.html,
-    order: req.body.order,
+    name,
+    imageUrl,
+    html,
+    order,
   });
 
   return sendCreated(res, lesson, "Thêm bài học thành công");

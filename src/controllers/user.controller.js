@@ -15,12 +15,12 @@ async function getUser(req, res) {
 }
 
 async function createUser(req, res) {
-  const user = await userService.createUser(req.body);
+  const user = await userService.createUser(req.body || {});
   return sendCreated(res, user, "Tạo người dùng thành công");
 }
 
 async function updateUser(req, res) {
-  const user = await userService.updateUser(req.params.id, req.body, req.user);
+  const user = await userService.updateUser(req.params.id, req.body || {}, req.user);
   return sendSuccess(res, user, "Cập nhật người dùng thành công");
 }
 

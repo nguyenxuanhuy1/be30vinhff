@@ -1,15 +1,8 @@
 const { prisma } = require("../config/db");
 const { AppError } = require("../utils/AppError");
+const { getVietnamDateString } = require("./streak.service");
 
 const DEFAULT_DAY_REWARDS = [1, 2, 3, 4, 5, 6, 7];
-
-/**
- * Lấy chuỗi ngày YYYY-MM-DD theo múi giờ Việt Nam (UTC+7)
- */
-function getVietnamDateString(date = new Date()) {
-  const vnTime = new Date(date.getTime() + 7 * 60 * 60 * 1000);
-  return vnTime.toISOString().slice(0, 10);
-}
 
 /**
  * Lấy cấu hình hệ thống Điểm danh nhận xu
@@ -195,7 +188,7 @@ async function claimDailyReward(userId) {
     nextDayIndex = (latestCheckIn.dayIndex % 7) + 1;
   }
 
-  const coinsToAward = Number(config.dayRewards[nextDayIndex - 1] || 1);
+  const coinsToAward = Number(config.dayRewards[nextDayIndex - 1] ?? 1);
 
   const [, updatedUser] = await prisma.$transaction([
     prisma.dailyCheckIn.create({
@@ -270,7 +263,7 @@ async function listUsersWithCoins({ search = "", page = 1, limit = 50 } = {}) {
 }
 
 /**
- * Admin điều chỉnh (cộng/trừ) số xu của 1 user
+ * Admin điều chỉnh (cộng/trừ) số xu của 1 user (cập nhật atomic, không để âm xu)
  */
 async function adjustUserCoins({ userId, amount }) {
   const user = await prisma.user.findUnique({
@@ -287,19 +280,41 @@ async function adjustUserCoins({ userId, amount }) {
     throw AppError.badRequest("Số xu điều chỉnh phải là số nguyên", { field: "amount" });
   }
 
-  const newCoins = Math.max(0, user.coins + delta);
+  const previousCoins = user.coins;
 
-  const updated = await prisma.user.update({
+  if (delta < 0) {
+    const dec = Math.abs(delta);
+    const updateRes = await prisma.user.updateMany({
+      where: {
+        id: userId,
+        coins: { gte: dec },
+      },
+      data: {
+        coins: { decrement: dec },
+      },
+    });
+    if (updateRes.count === 0) {
+      throw AppError.badRequest("Số xu hiện tại của người dùng không đủ để trừ mức này.");
+    }
+  } else if (delta > 0) {
+    await prisma.user.update({
+      where: { id: userId },
+      data: {
+        coins: { increment: delta },
+      },
+    });
+  }
+
+  const updatedUser = await prisma.user.findUnique({
     where: { id: userId },
-    data: { coins: newCoins },
     select: { id: true, username: true, coins: true },
   });
 
   return {
-    userId: updated.id,
-    username: updated.username,
-    previousCoins: user.coins,
-    newCoins: updated.coins,
+    userId: updatedUser.id,
+    username: updatedUser.username,
+    previousCoins,
+    newCoins: updatedUser.coins,
     delta,
   };
 }

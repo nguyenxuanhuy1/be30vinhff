@@ -12,10 +12,11 @@ async function getRoom(req, res) {
 }
 
 async function createRoom(req, res) {
+  const { name, imageUrl, order } = req.body || {};
   const room = await roomService.createRoom({
-    name: req.body.name,
-    imageUrl: req.body.imageUrl,
-    order: req.body.order,
+    name,
+    imageUrl,
+    order,
   });
 
   return sendCreated(res, room, "Thêm phòng thành công");

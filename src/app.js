@@ -4,8 +4,8 @@ require("express-async-errors");
 
 const express = require("express");
 const helmet = require("helmet");
-const cors = require("cors");
 const morgan = require("morgan");
+const cookieParser = require("cookie-parser");
 
 const { env } = require("./config/env");
 const routes = require("./routes");
@@ -19,23 +19,9 @@ function createApp() {
   app.set("trust proxy", 1);
 
   app.use(helmet());
-  app.use(
-    cors({
-      origin: function checkOrigin(origin, callback) {
-        // Cho phép request không có origin (curl, proxy nội bộ, server-to-server)
-        if (!origin) return callback(null, true);
-        // Trong môi trường development: cho phép mọi origin (IP LAN, IP Public router, domain ngrok)
-        if (!env.isProduction) return callback(null, true);
-        // Trong production: kiểm tra whitelist CORS_ORIGIN
-        if (env.corsOrigins.includes(origin)) return callback(null, true);
-        return callback(new Error("CORS không cho phép origin này: " + origin));
-      },
-      credentials: true,
-    }),
-  );
-
-  app.use(express.json({ limit: "25mb" }));
-  app.use(express.urlencoded({ limit: "25mb", extended: true }));
+  app.use(cookieParser());
+  app.use(express.json({ limit: "1mb" }));
+  app.use(express.urlencoded({ limit: "1mb", extended: true }));
 
   app.use(env.isProduction ? morgan("combined") : morgan("dev"));
 

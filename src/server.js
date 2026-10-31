@@ -7,7 +7,8 @@ async function bootstrap() {
   await prisma.$connect();
 
   const app = createApp();
-  const host = process.env.HOST || "0.0.0.0";
+  // Chỉ nghe trên máy local, ra ngoài đi qua proxy /api của Next.js
+  const host = "127.0.0.1";
   const server = app.listen(env.port, host, function onListening() {
     console.log("[server] API sẵn sàng tại http://" + host + ":" + env.port + "/api");
   });

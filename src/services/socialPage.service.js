@@ -17,7 +17,7 @@ const DEFAULT_SOCIAL_PROFILE = {
   name: "STEM Game Center",
   tagline:
     "Theo dõi kênh chính thức để nhận tin tức, sự kiện, hướng dẫn chơi và quà tặng mới nhất.",
-  logoSrc: "/images/logo.png",
+  logoSrc: "/images/background.webp",
   logoAlt: "STEM Game Center",
   about:
     "STEM Game Center là sân chơi học qua trò chơi dành cho học sinh cấp 2. Các kênh bên dưới là nơi cập nhật lịch sự kiện, mẹo vượt màn chơi và quà tặng cộng đồng.",

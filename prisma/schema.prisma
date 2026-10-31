@@ -24,6 +24,7 @@ model User {
   avatarUrl          String?
   inventoryAvatarUrl String?
   role               UserRole @default(MEMBER)
+  tokenVersion       Int      @default(0)
   gender             String?  @db.VarChar(20) // "MALE" | "FEMALE" | "OTHER"
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -343,18 +344,26 @@ model ShopItem {
   @@map("shop_items")
 }
 
+// Trạng thái đơn hàng mua sắm
+enum ShopOrderStatus {
+  PENDING
+  PROCESSING
+  COMPLETED
+  CANCELLED
+}
+
 // Đơn hàng mua sắm vật phẩm bằng xu
 model ShopOrder {
-  id          String    @id @default(uuid())
+  id          String          @id @default(uuid())
   userId      String
   itemId      String
-  coinPrice   Int       // Số xu đã trừ của người dùng
-  isSpecial   Boolean   @default(false)
-  contactInfo String?   @db.VarChar(500) // Thông tin liên lạc (bắt buộc với đồ đặc biệt)
-  note        String?   @db.VarChar(500)
-  status      String    @default("PENDING") // PENDING, PROCESSING, COMPLETED, CANCELLED
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
+  coinPrice   Int             // Số xu đã trừ của người dùng
+  isSpecial   Boolean         @default(false)
+  contactInfo String?         @db.VarChar(500) // Thông tin liên lạc (bắt buộc với đồ đặc biệt)
+  note        String?         @db.VarChar(500)
+  status      ShopOrderStatus @default(PENDING)
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
 
   user User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   item ShopItem @relation(fields: [itemId], references: [id], onDelete: Cascade)

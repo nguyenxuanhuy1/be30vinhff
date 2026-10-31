@@ -4,9 +4,14 @@ const { hashPassword, comparePassword } = require("../utils/password");
 const { signToken, signRefreshToken, verifyRefreshToken } = require("../utils/token");
 const { validateUsername, validatePassword } = require("../utils/validators");
 const { USER_PUBLIC_SELECT } = require("../utils/select");
+const { recordUserLoginAndStreak } = require("./streak.service");
 
 function buildTokenPayload(user) {
-  return { sub: user.id, role: user.role };
+  return {
+    sub: user.id,
+    role: user.role,
+    tokenVersion: user.tokenVersion ?? 0,
+  };
 }
 
 async function register({ username, password, avatarUrl, gender }) {
@@ -25,19 +30,19 @@ async function register({ username, password, avatarUrl, gender }) {
       avatarUrl: avatarUrl || null,
       gender: gender ? String(gender).toUpperCase() : null,
       role: "MEMBER",
+      tokenVersion: 0,
     },
-    select: USER_PUBLIC_SELECT,
+    select: { ...USER_PUBLIC_SELECT, tokenVersion: true },
   });
 
   const payload = buildTokenPayload(user);
+  const { tokenVersion, ...safeUser } = user;
   return {
-    user,
+    user: safeUser,
     token: signToken(payload), // 3h
     refreshToken: signRefreshToken(payload), // 7d
   };
 }
-
-const { recordUserLoginAndStreak } = require("./streak.service");
 
 async function login({ username, password }) {
   const record = await prisma.user.findUnique({ where: { username } });
@@ -60,12 +65,12 @@ async function login({ username, password }) {
   // Duy trì chuỗi đăng nhập cho user và cho nhóm
   const streakInfo = await recordUserLoginAndStreak(record.id);
 
-  const { password: hashedPassword, ...user } = record;
+  const { password: hashedPassword, tokenVersion, ...user } = record;
   if (streakInfo) {
     user.streak = streakInfo.streak;
     user.lastLoginDate = streakInfo.lastLoginDate;
   }
-  const payload = buildTokenPayload(user);
+  const payload = buildTokenPayload(record);
 
   return {
     user,
@@ -131,16 +136,22 @@ async function refreshToken(tokenString) {
 
   const user = await prisma.user.findUnique({
     where: { id: userId },
-    select: USER_PUBLIC_SELECT,
+    select: { ...USER_PUBLIC_SELECT, tokenVersion: true },
   });
 
   if (!user) {
     throw AppError.unauthorized("Người dùng không tồn tại", "USER_NOT_FOUND");
   }
 
+  // Chống token cũ sau khi đổi mật khẩu / đổi quyền
+  if (decoded.tokenVersion !== undefined && decoded.tokenVersion !== user.tokenVersion) {
+    throw AppError.unauthorized("Phiên đăng nhập đã bị thu hồi, vui lòng đăng nhập lại", "TOKEN_REVOKED");
+  }
+
   const payload = buildTokenPayload(user);
+  const { tokenVersion, ...safeUser } = user;
   return {
-    user,
+    user: safeUser,
     token: signToken(payload), // 3h
     refreshToken: signRefreshToken(payload), // 7d
   };
