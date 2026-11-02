@@ -12,6 +12,8 @@ const { AppError } = require("../utils/AppError");
 
 function extractItemSlug(imageUrl) {
   if (!imageUrl || typeof imageUrl !== "string") return null;
+  // Ảnh Base64 tải lên từ máy không phải đồ trong public/items
+  if (imageUrl.startsWith("data:")) return null;
   const match = imageUrl.match(/(?:^|\/)items\/([^/]+?)(?:\.[a-zA-Z0-9]+)?$/);
   return match ? match[1] : null;
 }

@@ -4,6 +4,15 @@ const { prisma } = require("../config/db");
 const { env } = require("../config/env");
 const { AppError } = require("../utils/AppError");
 const { extractItemSlug } = require("./inventory.service");
+const { validateImageUrl } = require("../utils/validators");
+
+// Ảnh sản phẩm: đồ trong /items/..., link http(s) hoặc ảnh Base64 tải từ máy
+function validateItemImage(imageUrl) {
+  if (typeof imageUrl !== "string" || !imageUrl.trim()) {
+    throw AppError.badRequest("Ảnh sản phẩm không được để trống", { field: "imageUrl" });
+  }
+  return validateImageUrl(imageUrl, "imageUrl", { allowDataImage: true });
+}
 
 /**
  * Tự động đồng bộ item vào catalog.json nếu là đồ trang bị và chưa có
@@ -183,12 +192,13 @@ async function getItemById(id, userId = null) {
  * Admin: Tạo sản phẩm mới
  */
 async function createItem({ name, description, imageUrl, coinPrice, isSpecial, stock }) {
-  if (!name || !name.trim()) {
+  if (typeof name !== "string" || !name.trim()) {
     throw AppError.badRequest("Tên sản phẩm không được để trống", { field: "name" });
   }
-  if (!imageUrl || !imageUrl.trim()) {
-    throw AppError.badRequest("Ảnh sản phẩm không được để trống", { field: "imageUrl" });
+  if (name.trim().length > 120) {
+    throw AppError.badRequest("Tên sản phẩm tối đa 120 ký tự", { field: "name" });
   }
+  imageUrl = validateItemImage(imageUrl);
 
   const parsedPrice = Number(coinPrice);
   if (isNaN(parsedPrice) || parsedPrice < 0 || !Number.isInteger(parsedPrice)) {
@@ -207,7 +217,7 @@ async function createItem({ name, description, imageUrl, coinPrice, isSpecial, s
     data: {
       name: name.trim(),
       description: description ? description.trim() : null,
-      imageUrl: imageUrl.trim(),
+      imageUrl,
       coinPrice: parsedPrice,
       isSpecial: Boolean(isSpecial),
       stock: parsedStock,
@@ -218,7 +228,7 @@ async function createItem({ name, description, imageUrl, coinPrice, isSpecial, s
   // Tự động đồng bộ catalog.json nếu là đồ trang bị trong public/items
   const slug = extractItemSlug(imageUrl);
   if (slug) {
-    const filename = path.basename(imageUrl.trim());
+    const filename = path.basename(imageUrl);
     syncCatalogItem(slug, name.trim(), filename);
   }
 
@@ -233,8 +243,11 @@ async function updateItem(id, data) {
 
   const updateData = {};
   if (data.name !== undefined) {
-    if (!data.name.trim()) {
+    if (typeof data.name !== "string" || !data.name.trim()) {
       throw AppError.badRequest("Tên sản phẩm không được để trống", { field: "name" });
+    }
+    if (data.name.trim().length > 120) {
+      throw AppError.badRequest("Tên sản phẩm tối đa 120 ký tự", { field: "name" });
     }
     updateData.name = data.name.trim();
   }
@@ -242,10 +255,7 @@ async function updateItem(id, data) {
     updateData.description = data.description ? data.description.trim() : null;
   }
   if (data.imageUrl !== undefined) {
-    if (!data.imageUrl.trim()) {
-      throw AppError.badRequest("Ảnh sản phẩm không được để trống", { field: "imageUrl" });
-    }
-    updateData.imageUrl = data.imageUrl.trim();
+    updateData.imageUrl = validateItemImage(data.imageUrl);
   }
   if (data.coinPrice !== undefined) {
     const parsedPrice = Number(data.coinPrice);
@@ -290,10 +300,19 @@ async function updateItem(id, data) {
 }
 
 /**
- * Admin: Xoá sản phẩm
+ * Admin: Xoá sản phẩm.
+ * Xoá sản phẩm sẽ xoá theo toàn bộ đơn hàng (onDelete: Cascade), kể cả đơn
+ * người dùng đã trả xu, nên chỉ cho xoá khi chưa có đơn nào. Sản phẩm đã có
+ * đơn thì admin dùng "Tạm ngưng bán" (isActive = false).
  */
 async function deleteItem(id) {
   await getItemById(id);
+  const orderCount = await prisma.shopOrder.count({ where: { itemId: id } });
+  if (orderCount > 0) {
+    throw AppError.conflict(
+      `Sản phẩm đã có ${orderCount} đơn hàng nên không thể xoá. Hãy chuyển sang "Tạm ngưng bán" để ẩn khỏi cửa hàng.`
+    );
+  }
   return await prisma.shopItem.delete({
     where: { id },
   });
@@ -532,6 +551,12 @@ async function updateOrderStatus(orderId, status) {
     const oldStatus = order.status;
     if (oldStatus === status) {
       return order;
+    }
+
+    // Đơn đã huỷ đã được hoàn xu + trả kho, mở lại sẽ làm người dùng vừa có
+    // xu vừa có đồ. Muốn mua lại thì người dùng đặt đơn mới.
+    if (oldStatus === "CANCELLED") {
+      throw AppError.badRequest("Đơn hàng đã huỷ (đã hoàn xu) nên không thể mở lại.");
     }
 
     // 1. Chuyển sang COMPLETED: nếu là item trang bị, cấp vào userItem

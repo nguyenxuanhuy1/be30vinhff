@@ -8,7 +8,9 @@ async function listArticles(req, res) {
 }
 
 async function getArticle(req, res) {
-  const article = await articleService.getArticleBySlugOrId(req.params.id);
+  const article = await articleService.getArticleBySlugOrId(req.params.id, {
+    countView: req.user?.role !== "ADMIN",
+  });
   return sendSuccess(res, article, "Chi tiết bài viết");
 }
 

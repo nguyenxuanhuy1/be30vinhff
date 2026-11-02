@@ -64,7 +64,7 @@ async function getArticleById(id) {
   return article;
 }
 
-async function getArticleBySlugOrId(identifier) {
+async function getArticleBySlugOrId(identifier, { countView = true } = {}) {
   let article = await prisma.article.findFirst({
     where: {
       OR: [{ slug: identifier }, { id: identifier }],
@@ -74,6 +74,10 @@ async function getArticleBySlugOrId(identifier) {
 
   if (!article) {
     throw AppError.notFound("Không tìm thấy bài viết");
+  }
+
+  if (!countView) {
+    return article;
   }
 
   // Tăng lượt xem bất đồng bộ

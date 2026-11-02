@@ -1,7 +1,13 @@
 const { prisma } = require("../config/db");
 const { AppError } = require("../utils/AppError");
 const { hashPassword } = require("../utils/password");
-const { validateUsername, validatePassword, validateImageUrl } = require("../utils/validators");
+const {
+  validateUsername,
+  validatePassword,
+  validateImageUrl,
+  validateRole,
+  validateGender,
+} = require("../utils/validators");
 const { USER_PUBLIC_SELECT, USER_WITH_IMAGE_COUNT_SELECT } = require("../utils/select");
 const { invalidateUserAuthCache } = require("../middlewares/auth");
 
@@ -65,6 +71,8 @@ async function getUserById(id, actor) {
 async function createUser({ username, password, avatarUrl, gender, role }) {
   validateUsername(username);
   validatePassword(password);
+  const cleanGender = validateGender(gender);
+  const cleanRole = role ? validateRole(role) : "MEMBER";
 
   const existing = await prisma.user.findUnique({ where: { username } });
   if (existing) {
@@ -76,8 +84,8 @@ async function createUser({ username, password, avatarUrl, gender, role }) {
       username,
       password: await hashPassword(password),
       avatarUrl: avatarUrl || null,
-      gender: gender ? String(gender).toUpperCase() : null,
-      role: role ? String(role).toUpperCase() : "MEMBER",
+      gender: cleanGender,
+      role: cleanRole,
     },
     select: USER_PUBLIC_SELECT,
   });
@@ -85,7 +93,7 @@ async function createUser({ username, password, avatarUrl, gender, role }) {
 
 async function updateUser(id, payload, actor) {
   assertCanAccess(id, actor);
-  await getUserById(id, actor);
+  const current = await getUserById(id, actor);
 
   const { username, password, avatarUrl, inventoryAvatarUrl, gender, role } = payload;
 
@@ -116,12 +124,19 @@ async function updateUser(id, payload, actor) {
       : null;
   }
   if (gender !== undefined) {
-    data.gender = gender ? String(gender).toUpperCase() : null;
+    data.gender = validateGender(gender);
   }
+  // Chỉ coi là đổi vai trò khi giá trị thật sự khác, tránh thu hồi phiên vô cớ
   if (role !== undefined) {
-    data.role = String(role).toUpperCase();
-    if (!tokenVersionIncremented) {
-      data.tokenVersion = { increment: 1 };
+    const nextRole = validateRole(role);
+    if (nextRole !== current.role) {
+      if (actor.id === id) {
+        throw AppError.forbidden("Không thể tự thay đổi vai trò của chính mình");
+      }
+      data.role = nextRole;
+      if (!tokenVersionIncremented) {
+        data.tokenVersion = { increment: 1 };
+      }
     }
   }
 
@@ -140,6 +155,9 @@ async function updateUser(id, payload, actor) {
 }
 
 async function deleteUser(id, actor) {
+  if (actor.id === id) {
+    throw AppError.forbidden("Không thể tự xoá tài khoản đang đăng nhập");
+  }
   await getUserById(id, actor);
   // Ảnh nhật kí bị xoá theo do onDelete: Cascade
   await prisma.user.delete({ where: { id } });

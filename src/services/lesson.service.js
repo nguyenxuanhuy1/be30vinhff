@@ -48,7 +48,7 @@ async function getLessonById(id, currentUser = null) {
   return attachLessonTimeTag(lesson);
 }
 
-async function createLesson(roomId, { name, imageUrl, html, order }) {
+async function createLesson(roomId, { name, imageUrl, html, order, published }) {
   await getRoomById(roomId);
 
   const data = {
@@ -65,6 +65,10 @@ async function createLesson(roomId, { name, imageUrl, html, order }) {
   const sortOrder = validateOrder(order);
   if (sortOrder !== undefined) {
     data.order = sortOrder;
+  }
+
+  if (published !== undefined) {
+    data.published = Boolean(published);
   }
 
   const created = await prisma.lesson.create({
@@ -93,6 +97,9 @@ async function updateLesson(id, payload) {
   if (payload.order !== undefined) {
     const sortOrder = validateOrder(payload.order);
     data.order = sortOrder === undefined ? 0 : sortOrder;
+  }
+  if (payload.published !== undefined) {
+    data.published = Boolean(payload.published);
   }
 
   if (Object.keys(data).length === 0) {

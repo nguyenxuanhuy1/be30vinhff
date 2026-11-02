@@ -1,10 +1,11 @@
 const router = require("express").Router();
 const articleController = require("../controllers/article.controller");
-const { requireAuth, requireRole } = require("../middlewares/auth");
+const { requireAuth, requireRole, optionalAuth } = require("../middlewares/auth");
 
 // Đọc bài viết là công khai
 router.get("/", articleController.listArticles);
-router.get("/:id", articleController.getArticle);
+// optionalAuth để admin mở bài (khi sửa) không bị tính thêm lượt xem
+router.get("/:id", optionalAuth, articleController.getArticle);
 
 // Thêm, sửa, xoá bài viết chỉ dành cho Quản trị viên (ADMIN)
 router.post("/", requireAuth, requireRole("ADMIN"), articleController.createArticle);

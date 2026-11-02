@@ -50,8 +50,9 @@ function createApp() {
     })
   );
   app.use(cookieParser());
-  app.use(express.json({ limit: "1mb" }));
-  app.use(express.urlencoded({ limit: "1mb", extended: true }));
+  // 2mb để chứa ảnh Base64 (tối đa ~500KB ảnh gốc) mà admin tải lên cho phòng, bài học, tin tức, sản phẩm
+  app.use(express.json({ limit: "2mb" }));
+  app.use(express.urlencoded({ limit: "2mb", extended: true }));
 
   app.use(env.isProduction ? morgan("combined") : morgan("dev"));
 

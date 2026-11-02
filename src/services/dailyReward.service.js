@@ -279,6 +279,11 @@ async function adjustUserCoins({ userId, amount }) {
   if (!Number.isInteger(delta)) {
     throw AppError.badRequest("Số xu điều chỉnh phải là số nguyên", { field: "amount" });
   }
+  if (delta === 0 || Math.abs(delta) > 1_000_000) {
+    throw AppError.badRequest("Số xu điều chỉnh phải khác 0 và không vượt quá 1.000.000 mỗi lần", {
+      field: "amount",
+    });
+  }
 
   const previousCoins = user.coins;
 

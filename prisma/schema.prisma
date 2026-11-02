@@ -330,7 +330,7 @@ model ShopItem {
   id          String      @id @default(uuid())
   name        String      @db.VarChar(120)
   description String?     @db.Text
-  imageUrl    String      @db.VarChar(500)
+  imageUrl    String      @db.Text // đường dẫn /items/..., link http(s) hoặc ảnh Base64
   coinPrice   Int         @default(0) // Giá tính bằng xu
   isSpecial   Boolean     @default(false) // Đồ dùng đặc biệt: yêu cầu nhập thông tin liên lạc khi mua
   stock       Int?        // Số lượng tồn kho, null là vô hạn

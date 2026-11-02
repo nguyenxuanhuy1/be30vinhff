@@ -19,7 +19,12 @@ function validatePassword(password) {
   return password;
 }
 
-function validateImageUrl(imageUrl, field = "imageUrl") {
+// Ảnh Base64 admin tải lên: chỉ nhận các định dạng ảnh phổ biến.
+// ~700.000 ký tự Base64 tương đương ảnh gốc khoảng 500KB.
+const DATA_IMAGE_PATTERN = /^data:image\/(png|jpe?g|webp|gif|svg\+xml);base64,[A-Za-z0-9+/=\s]+$/;
+const MAX_DATA_IMAGE_LENGTH = 700_000;
+
+function validateImageUrl(imageUrl, field = "imageUrl", { allowDataImage = false } = {}) {
   if (!imageUrl || typeof imageUrl !== "string") {
     throw AppError.badRequest(`Thiếu đường dẫn ${field}`, { field });
   }
@@ -29,6 +34,15 @@ function validateImageUrl(imageUrl, field = "imageUrl") {
   }
   // inventoryAvatarUrl tạm thời hỗ trợ base64 trước khi chuyển sang lưu file riêng
   if (field === "inventoryAvatarUrl" && trimmed.startsWith("data:image/")) {
+    return trimmed;
+  }
+  if (allowDataImage && trimmed.startsWith("data:")) {
+    if (!DATA_IMAGE_PATTERN.test(trimmed)) {
+      throw AppError.badRequest("Ảnh tải lên phải là PNG, JPG, WEBP, GIF hoặc SVG", { field });
+    }
+    if (trimmed.length > MAX_DATA_IMAGE_LENGTH) {
+      throw AppError.badRequest("Ảnh tải lên quá lớn, vui lòng chọn ảnh dưới 500KB", { field });
+    }
     return trimmed;
   }
   if (trimmed.length > 2000) {
@@ -105,15 +119,39 @@ function validateLessonName(name) {
   return trimmed;
 }
 
-// Ảnh không bắt buộc: để trống hoặc gửi null nghĩa là dùng ảnh mặc định
-function validateOptionalImageUrl(imageUrl) {
+// Ảnh không bắt buộc: để trống hoặc gửi null nghĩa là dùng ảnh mặc định.
+// Cho phép ảnh Base64 vì chỉ admin dùng (phòng, bài học, tin tức).
+function validateOptionalImageUrl(imageUrl, field = "imageUrl") {
   if (imageUrl === undefined || imageUrl === null) {
     return null;
   }
   if (typeof imageUrl !== "string" || imageUrl.trim().length === 0) {
     return null;
   }
-  return validateImageUrl(imageUrl);
+  return validateImageUrl(imageUrl, field, { allowDataImage: true });
+}
+
+const USER_ROLES = ["ADMIN", "MEMBER"];
+const USER_GENDERS = ["MALE", "FEMALE", "OTHER"];
+
+function validateRole(role) {
+  const value = String(role || "").trim().toUpperCase();
+  if (!USER_ROLES.includes(value)) {
+    throw AppError.badRequest("Vai trò chỉ được là ADMIN hoặc MEMBER", { field: "role" });
+  }
+  return value;
+}
+
+// Giới tính không bắt buộc: rỗng/null nghĩa là chưa rõ
+function validateGender(gender) {
+  if (gender === undefined || gender === null || gender === "") {
+    return null;
+  }
+  const value = String(gender).trim().toUpperCase();
+  if (!USER_GENDERS.includes(value)) {
+    throw AppError.badRequest("Giới tính chỉ được là MALE, FEMALE hoặc OTHER", { field: "gender" });
+  }
+  return value;
 }
 
 // HTML bài học do admin dán vào, cho phép để trống rồi bổ sung sau
@@ -234,6 +272,8 @@ module.exports = {
   validateRoomName,
   validateLessonName,
   validateOptionalImageUrl,
+  validateRole,
+  validateGender,
   validateLessonHtml,
   validateOrder,
   MAX_LESSON_HTML_LENGTH,
