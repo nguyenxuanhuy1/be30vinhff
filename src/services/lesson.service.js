@@ -76,7 +76,7 @@ async function createLesson(roomId, { name, imageUrl, html, order }) {
 }
 
 async function updateLesson(id, payload) {
-  await getLessonById(id);
+  await getLessonById(id, { role: "ADMIN" });
 
   const data = {};
 
@@ -109,7 +109,15 @@ async function updateLesson(id, payload) {
 }
 
 async function deleteLesson(id) {
-  await getLessonById(id);
+  const existing = await prisma.lesson.findUnique({
+    where: { id },
+    select: { id: true },
+  });
+
+  if (!existing) {
+    throw AppError.notFound("Không tìm thấy bài học");
+  }
+
   await prisma.lesson.delete({ where: { id } });
   return { id };
 }

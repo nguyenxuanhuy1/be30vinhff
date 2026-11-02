@@ -81,6 +81,9 @@ function extractBearerToken(req) {
 
 // Bắt buộc có token hợp lệ và query lại role/tokenVersion từ DB
 async function requireAuth(req, res, next) {
+  if (req.method === "OPTIONS") {
+    return next();
+  }
   const token = extractBearerToken(req);
   if (!token) {
     return next(AppError.unauthorized("Thiếu token xác thực hoặc phiên đăng nhập đã kết thúc", "MISSING_TOKEN"));

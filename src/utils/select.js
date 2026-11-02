@@ -103,6 +103,7 @@ const LESSON_SELECT = {
   slug: true,
   path: true,
   requiredSlots: true,
+  published: true,
   createdAt: true,
   updatedAt: true,
 };
