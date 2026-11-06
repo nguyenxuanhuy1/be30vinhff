@@ -1,6 +1,13 @@
 const shopService = require("../services/shop.service");
 const { sendSuccess } = require("../utils/response");
 const { AppError } = require("../utils/AppError");
+const { withServedImage, dropUnchangedServedImage } = require("../utils/servedImage");
+
+// Ảnh sản phẩm Base64 -> đường dẫn /api/images/shop-items/... (xem utils/servedImage.js).
+// Chỉ đổi ở bước trả ra: logic bên trong (đồng bộ tủ đồ theo /items/...) vẫn dùng dữ liệu gốc.
+const servedItem = (data) => withServedImage("shop-items", data);
+const servedOrder = (order) => (order && order.item ? { ...order, item: servedItem(order.item) } : order);
+const servedOrders = (orders) => (Array.isArray(orders) ? orders.map(servedOrder) : orders);
 
 async function listItems(req, res) {
   const includeInactive = req.user?.role === "ADMIN" && req.query?.all === "true";
@@ -9,7 +16,7 @@ async function listItems(req, res) {
     search: req.query?.search,
     userId: req.user?.id || null,
   });
-  return sendSuccess(res, items, "Lấy danh sách sản phẩm thành công");
+  return sendSuccess(res, servedItem(items), "Lấy danh sách sản phẩm thành công");
 }
 
 async function getAvailableAssets(req, res) {
@@ -19,7 +26,7 @@ async function getAvailableAssets(req, res) {
 
 async function getItem(req, res) {
   const item = await shopService.getItemById(req.params.id, req.user?.id || null);
-  return sendSuccess(res, item, "Lấy thông tin sản phẩm thành công");
+  return sendSuccess(res, servedItem(item), "Lấy thông tin sản phẩm thành công");
 }
 
 async function purchaseItem(req, res) {
@@ -43,17 +50,20 @@ async function getMyOrders(req, res) {
     throw AppError.unauthorized("Chưa đăng nhập", "UNAUTHORIZED");
   }
   const orders = await shopService.getUserOrders(userId);
-  return sendSuccess(res, orders, "Lấy lịch sử mua hàng thành công");
+  return sendSuccess(res, servedOrders(orders), "Lấy lịch sử mua hàng thành công");
 }
 
 async function createItem(req, res) {
   const item = await shopService.createItem(req.body || {});
-  return sendSuccess(res, item, "Thêm sản phẩm mới thành công", 201);
+  return sendSuccess(res, servedItem(item), "Thêm sản phẩm mới thành công", 201);
 }
 
 async function updateItem(req, res) {
-  const item = await shopService.updateItem(req.params.id, req.body || {});
-  return sendSuccess(res, item, "Cập nhật sản phẩm thành công");
+  const item = await shopService.updateItem(
+    req.params.id,
+    dropUnchangedServedImage(req.body || {}, "imageUrl"),
+  );
+  return sendSuccess(res, servedItem(item), "Cập nhật sản phẩm thành công");
 }
 
 async function deleteItem(req, res) {
@@ -69,13 +79,13 @@ async function getAdminOrders(req, res) {
     page: page ? parseInt(page, 10) : 1,
     limit: limit ? parseInt(limit, 10) : 50,
   });
-  return sendSuccess(res, result, "Lấy danh sách đơn hàng thành công");
+  return sendSuccess(res, { ...result, orders: servedOrders(result.orders) }, "Lấy danh sách đơn hàng thành công");
 }
 
 async function updateOrderStatus(req, res) {
   const { status } = req.body || {};
   const order = await shopService.updateOrderStatus(req.params.id, status);
-  return sendSuccess(res, order, "Cập nhật trạng thái đơn hàng thành công");
+  return sendSuccess(res, servedOrder(order), "Cập nhật trạng thái đơn hàng thành công");
 }
 
 module.exports = {

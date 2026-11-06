@@ -19,10 +19,34 @@ function validatePassword(password) {
   return password;
 }
 
-// Ảnh Base64 admin tải lên: chỉ nhận các định dạng ảnh phổ biến.
-// ~700.000 ký tự Base64 tương đương ảnh gốc khoảng 500KB.
+// Ảnh Base64 tải lên: chỉ nhận các định dạng ảnh phổ biến.
+// Giới hạn tính theo dung lượng ẢNH GỐC (sau khi giải mã Base64), tối đa 500KB.
+// Base64 dài hơn ảnh gốc khoảng 1,33 lần, nên chuỗi gửi lên tối đa ~667KB.
 const DATA_IMAGE_PATTERN = /^data:image\/(png|jpe?g|webp|gif|svg\+xml);base64,[A-Za-z0-9+/=\s]+$/;
-const MAX_DATA_IMAGE_LENGTH = 700_000;
+const MAX_IMAGE_BYTES = 500 * 1024;
+const MAX_IMAGE_LABEL = "500KB";
+
+// Dung lượng thật của ảnh nằm trong chuỗi data:image/...;base64,xxx
+function getDataImageBytes(dataUrl) {
+  const commaIndex = dataUrl.indexOf(",");
+  const base64 = dataUrl.slice(commaIndex + 1).replace(/\s/g, "");
+  const padding = base64.endsWith("==") ? 2 : base64.endsWith("=") ? 1 : 0;
+  return Math.floor((base64.length * 3) / 4) - padding;
+}
+
+function validateDataImage(dataUrl, field) {
+  if (!DATA_IMAGE_PATTERN.test(dataUrl)) {
+    throw AppError.badRequest("Ảnh tải lên phải là PNG, JPG, WEBP, GIF hoặc SVG", { field });
+  }
+  const bytes = getDataImageBytes(dataUrl);
+  if (bytes > MAX_IMAGE_BYTES) {
+    throw AppError.badRequest(
+      `Ảnh tải lên nặng ${Math.ceil(bytes / 1024)}KB, vượt quá ${MAX_IMAGE_LABEL}. Vui lòng nén hoặc chọn ảnh nhẹ hơn.`,
+      { field, maxBytes: MAX_IMAGE_BYTES, bytes },
+    );
+  }
+  return dataUrl;
+}
 
 function validateImageUrl(imageUrl, field = "imageUrl", { allowDataImage = false } = {}) {
   if (!imageUrl || typeof imageUrl !== "string") {
@@ -33,17 +57,11 @@ function validateImageUrl(imageUrl, field = "imageUrl", { allowDataImage = false
     throw AppError.badRequest(`Đường dẫn ${field} không được để trống`, { field });
   }
   // inventoryAvatarUrl tạm thời hỗ trợ base64 trước khi chuyển sang lưu file riêng
-  if (field === "inventoryAvatarUrl" && trimmed.startsWith("data:image/")) {
-    return trimmed;
+  if (field === "inventoryAvatarUrl" && trimmed.startsWith("data:")) {
+    return validateDataImage(trimmed, field);
   }
   if (allowDataImage && trimmed.startsWith("data:")) {
-    if (!DATA_IMAGE_PATTERN.test(trimmed)) {
-      throw AppError.badRequest("Ảnh tải lên phải là PNG, JPG, WEBP, GIF hoặc SVG", { field });
-    }
-    if (trimmed.length > MAX_DATA_IMAGE_LENGTH) {
-      throw AppError.badRequest("Ảnh tải lên quá lớn, vui lòng chọn ảnh dưới 500KB", { field });
-    }
-    return trimmed;
+    return validateDataImage(trimmed, field);
   }
   if (trimmed.length > 2000) {
     throw AppError.badRequest(`Đường dẫn ${field} tối đa 2000 ký tự`, { field });
@@ -154,21 +172,14 @@ function validateGender(gender) {
   return value;
 }
 
-// HTML bài học do admin dán vào, cho phép để trống rồi bổ sung sau
-const MAX_LESSON_HTML_LENGTH = 200_000;
-
+// HTML bài học do admin dán vào, cho phép để trống rồi bổ sung sau.
+// Không giới hạn độ dài HTML, chỉ giới hạn ảnh.
 function validateLessonHtml(html) {
   if (html === undefined || html === null) {
     return "";
   }
   if (typeof html !== "string") {
     throw AppError.badRequest("Nội dung HTML phải là chuỗi", { field: "html" });
-  }
-  if (html.length > MAX_LESSON_HTML_LENGTH) {
-    throw AppError.badRequest(
-      `Nội dung HTML không được vượt quá ${MAX_LESSON_HTML_LENGTH} ký tự`,
-      { field: "html" },
-    );
   }
   return html;
 }
@@ -276,7 +287,8 @@ module.exports = {
   validateGender,
   validateLessonHtml,
   validateOrder,
-  MAX_LESSON_HTML_LENGTH,
+  MAX_IMAGE_BYTES,
+  MAX_IMAGE_LABEL,
   slugify,
   validateArticleTitle,
   validateArticleSlug,

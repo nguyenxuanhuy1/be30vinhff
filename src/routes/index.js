@@ -12,6 +12,7 @@ const articleRoutes = require("./article.routes");
 const dailyRewardRoutes = require("./dailyReward.routes");
 const shopRoutes = require("./shop.routes");
 const socialPageRoutes = require("./socialPage.routes");
+const imageRoutes = require("./image.routes");
 const { sendSuccess } = require("../utils/response");
 
 // Route kiểm tra tình trạng API, không cần token
@@ -32,6 +33,8 @@ router.use("/articles", articleRoutes);
 router.use("/daily-rewards", dailyRewardRoutes);
 router.use("/shop", shopRoutes);
 router.use("/social-page", socialPageRoutes);
+// Ảnh Base64 trong DB được giải mã và trả về như file ảnh (xem utils/servedImage.js)
+router.use("/images", imageRoutes);
 
 module.exports = router;
 

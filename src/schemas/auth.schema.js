@@ -15,7 +15,6 @@ const passwordSchema = z
 const registerBodySchema = z.object({
   username: usernameSchema,
   password: passwordSchema,
-  avatarUrl: z.string().max(2000).optional().nullable(),
   gender: z.string().max(20).optional().nullable(),
 });
 

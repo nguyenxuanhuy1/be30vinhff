@@ -1,14 +1,18 @@
 const roomService = require("../services/room.service");
 const { sendSuccess, sendCreated } = require("../utils/response");
+const { withServedImage, dropUnchangedServedImage } = require("../utils/servedImage");
+
+// Ảnh Base64 -> đường dẫn /api/images/rooms/... (xem utils/servedImage.js)
+const served = (data) => withServedImage("rooms", data);
 
 async function listRooms(req, res) {
   const rooms = await roomService.listRooms();
-  return sendSuccess(res, rooms, "Danh sách phòng");
+  return sendSuccess(res, served(rooms), "Danh sách phòng");
 }
 
 async function getRoom(req, res) {
   const room = await roomService.getRoomById(req.params.id);
-  return sendSuccess(res, room, "Thông tin phòng");
+  return sendSuccess(res, served(room), "Thông tin phòng");
 }
 
 async function createRoom(req, res) {
@@ -19,12 +23,12 @@ async function createRoom(req, res) {
     order,
   });
 
-  return sendCreated(res, room, "Thêm phòng thành công");
+  return sendCreated(res, served(room), "Thêm phòng thành công");
 }
 
 async function updateRoom(req, res) {
-  const room = await roomService.updateRoom(req.params.id, req.body);
-  return sendSuccess(res, room, "Cập nhật phòng thành công");
+  const room = await roomService.updateRoom(req.params.id, dropUnchangedServedImage(req.body, "imageUrl"));
+  return sendSuccess(res, served(room), "Cập nhật phòng thành công");
 }
 
 async function deleteRoom(req, res) {

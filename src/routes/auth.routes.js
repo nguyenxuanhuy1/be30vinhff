@@ -12,8 +12,28 @@ const authRateLimit = createRateLimit({
   message: "Bạn đã thử quá nhiều lần. Vui lòng đợi 15 phút trước khi thử lại.",
 });
 
+// Giới hạn thêm theo TÊN TÀI KHOẢN: kẻ tấn công đổi IP liên tục (botnet, proxy)
+// vẫn chỉ thử được 20 mật khẩu / 15 phút cho mỗi tài khoản
+const loginPerAccountRateLimit = createRateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 20,
+  message: "Tài khoản này bị thử đăng nhập sai quá nhiều lần. Vui lòng đợi 15 phút rồi thử lại.",
+  key: (req) => {
+    const username = req.body && req.body.username;
+    return typeof username === "string" && username.trim()
+      ? `user:${username.trim().toLowerCase()}`
+      : null;
+  },
+});
+
 router.post("/register", authRateLimit, validate({ body: registerBodySchema }), authController.register);
-router.post("/login", authRateLimit, validate({ body: loginBodySchema }), authController.login);
+router.post(
+  "/login",
+  authRateLimit,
+  loginPerAccountRateLimit,
+  validate({ body: loginBodySchema }),
+  authController.login,
+);
 router.post("/refresh", authController.refresh);
 router.get("/me", requireAuth, authController.me);
 

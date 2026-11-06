@@ -2,6 +2,7 @@ const { Prisma } = require("@prisma/client");
 const { AppError } = require("../utils/AppError");
 const { sendError } = require("../utils/response");
 const { env } = require("../config/env");
+const { MAX_IMAGE_LABEL } = require("../utils/validators");
 
 // Dịch mọi lỗi kỹ thuật về AppError để client chỉ thấy message/code sạch
 function normalizeError(err) {
@@ -51,6 +52,17 @@ function normalizeError(err) {
     (err instanceof SyntaxError && (err.status === 400 || err.statusCode === 400) && "body" in err)
   ) {
     return AppError.badRequest("Body JSON không hợp lệ", { reason: "invalid_json" });
+  }
+
+  // Dữ liệu gửi lên vượt mức trần của express.json() (thường do ảnh quá lớn)
+  if (err.type === "entity.too.large") {
+    const limitMb = err.limit ? Math.round(err.limit / 1024 / 1024) : null;
+    return new AppError(
+      `Dữ liệu gửi lên quá lớn${limitMb ? ` (tối đa ${limitMb}MB)` : ""}. Ảnh tối đa ${MAX_IMAGE_LABEL}, vui lòng nén hoặc chọn ảnh nhẹ hơn.`,
+      413,
+      "PAYLOAD_TOO_LARGE",
+      { limit: err.limit, length: err.length },
+    );
   }
 
   const message = (err && err.message) || "Lỗi hệ thống";

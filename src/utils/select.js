@@ -84,10 +84,11 @@ const ROOM_SELECT = {
 };
 
 // Phòng gọn, dùng làm quan hệ lồng trong bài học
+// Thông tin phòng gửi kèm chi tiết bài học. KHÔNG kèm ảnh phòng: ảnh lưu dạng Base64
+// nặng ~1MB mà trang chơi bài không dùng tới (trước đây mỗi lần mở bài tải thừa ~1,1MB)
 const ROOM_BASIC_SELECT = {
   id: true,
   name: true,
-  imageUrl: true,
   order: true,
   createdAt: true,
   updatedAt: true,

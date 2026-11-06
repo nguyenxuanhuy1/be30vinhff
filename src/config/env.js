@@ -18,6 +18,11 @@ const env = {
   bcryptSaltRounds: 10,
   labSecret: process.env.LAB_SECRET,
   labTokenExpiresIn: "2h",
+  // Domain được phép gọi API chéo (CORS). Để trống = chỉ cho gọi cùng domain.
+  corsOrigins: (process.env.CORS_ORIGINS || "")
+    .split(",")
+    .map((origin) => origin.trim().replace(/\/+$/, ""))
+    .filter(Boolean),
   // catalog.json nằm ở public của frontend (chung repo)
   labCatalogPath: path.resolve(__dirname, "../../../frontend/public/items/catalog.json"),
 };

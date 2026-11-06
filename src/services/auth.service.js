@@ -2,7 +2,7 @@ const { prisma } = require("../config/db");
 const { AppError } = require("../utils/AppError");
 const { hashPassword, comparePassword } = require("../utils/password");
 const { signToken, signRefreshToken, verifyRefreshToken } = require("../utils/token");
-const { validateUsername, validatePassword } = require("../utils/validators");
+const { validateUsername, validatePassword, validateGender } = require("../utils/validators");
 const { USER_PUBLIC_SELECT } = require("../utils/select");
 const { recordUserLoginAndStreak } = require("./streak.service");
 
@@ -14,9 +14,11 @@ function buildTokenPayload(user) {
   };
 }
 
-async function register({ username, password, avatarUrl, gender }) {
+async function register({ username, password, gender }) {
   validateUsername(username);
   validatePassword(password);
+  // Chỉ nhận MALE / FEMALE / OTHER, giá trị lạ trả lỗi 400 thay vì lỗi cơ sở dữ liệu
+  const cleanGender = validateGender(gender);
 
   const existing = await prisma.user.findUnique({ where: { username }, select: { id: true } });
   if (existing) {
@@ -27,8 +29,9 @@ async function register({ username, password, avatarUrl, gender }) {
     data: {
       username,
       password: await hashPassword(password),
-      avatarUrl: avatarUrl || null,
-      gender: gender ? String(gender).toUpperCase() : null,
+      // Ảnh đại diện không nhận lúc đăng ký: đặt sau ở trang Hồ sơ (có kiểm tra loại ảnh, 500KB)
+      avatarUrl: null,
+      gender: cleanGender,
       role: "MEMBER",
       tokenVersion: 0,
     },

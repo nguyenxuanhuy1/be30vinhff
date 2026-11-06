@@ -12,8 +12,8 @@ const REFRESH_COOKIE_OPTIONS = {
 };
 
 async function register(req, res) {
-  const { username, password, avatarUrl, gender } = req.body || {};
-  const result = await authService.register({ username, password, avatarUrl, gender });
+  const { username, password, gender } = req.body || {};
+  const result = await authService.register({ username, password, gender });
 
   if (result.refreshToken) {
     res.cookie("refreshToken", result.refreshToken, REFRESH_COOKIE_OPTIONS);

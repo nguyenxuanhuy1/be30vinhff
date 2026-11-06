@@ -1,6 +1,6 @@
 const { prisma } = require("../config/db");
 const { AppError } = require("../utils/AppError");
-const { hashPassword } = require("../utils/password");
+const { hashPassword, comparePassword } = require("../utils/password");
 const {
   validateUsername,
   validatePassword,
@@ -95,7 +95,7 @@ async function updateUser(id, payload, actor) {
   assertCanAccess(id, actor);
   const current = await getUserById(id, actor);
 
-  const { username, password, avatarUrl, inventoryAvatarUrl, gender, role } = payload;
+  const { username, password, currentPassword, avatarUrl, inventoryAvatarUrl, gender, role } = payload;
 
   // Thành viên không được tự đổi tên hoặc tự nâng quyền
   if (actor.role !== "ADMIN" && (role !== undefined || username !== undefined)) {
@@ -111,12 +111,29 @@ async function updateUser(id, payload, actor) {
   }
   if (password !== undefined) {
     validatePassword(password);
+    // Thành viên tự đổi mật khẩu phải nhập đúng mật khẩu cũ, tránh trường hợp ai đó
+    // lấy được phiên đăng nhập rồi đổi mật khẩu để chiếm luôn tài khoản.
+    // Admin đặt lại mật khẩu cho người khác (trang quản trị) thì không cần.
+    if (actor.role !== "ADMIN") {
+      if (typeof currentPassword !== "string" || !currentPassword) {
+        throw AppError.badRequest("Vui lòng nhập mật khẩu hiện tại để đổi mật khẩu", {
+          field: "currentPassword",
+        });
+      }
+      const record = await prisma.user.findUnique({ where: { id }, select: { password: true } });
+      if (!record || !(await comparePassword(currentPassword, record.password))) {
+        throw AppError.badRequest("Mật khẩu hiện tại không đúng", { field: "currentPassword" });
+      }
+    }
     data.password = await hashPassword(password);
     data.tokenVersion = { increment: 1 };
     tokenVersionIncremented = true;
   }
   if (avatarUrl !== undefined) {
-    data.avatarUrl = avatarUrl ? validateImageUrl(avatarUrl, "avatarUrl") : null;
+    // Ảnh đại diện cắt ở trang hồ sơ được gửi lên dạng Base64, kiểm tra loại ảnh và giới hạn 500KB
+    data.avatarUrl = avatarUrl
+      ? validateImageUrl(avatarUrl, "avatarUrl", { allowDataImage: true })
+      : null;
   }
   if (inventoryAvatarUrl !== undefined) {
     data.inventoryAvatarUrl = inventoryAvatarUrl

@@ -1,27 +1,34 @@
 const articleService = require("../services/article.service");
 const { sendSuccess, sendCreated } = require("../utils/response");
+const { withServedImage, dropUnchangedServedImage } = require("../utils/servedImage");
+
+// Ảnh bìa Base64 -> đường dẫn /api/images/articles/... (xem utils/servedImage.js)
+const served = (data) => withServedImage("articles", data);
 
 async function listArticles(req, res) {
   const { category, search, page, limit } = req.query;
   const result = await articleService.listArticles({ category, search, page, limit });
-  return sendSuccess(res, result, "Danh sách bài viết");
+  return sendSuccess(res, { ...result, articles: served(result.articles) }, "Danh sách bài viết");
 }
 
 async function getArticle(req, res) {
   const article = await articleService.getArticleBySlugOrId(req.params.id, {
     countView: req.user?.role !== "ADMIN",
   });
-  return sendSuccess(res, article, "Chi tiết bài viết");
+  return sendSuccess(res, served(article), "Chi tiết bài viết");
 }
 
 async function createArticle(req, res) {
   const article = await articleService.createArticle(req.body || {}, req.user?.id);
-  return sendCreated(res, article, "Thêm bài viết thành công");
+  return sendCreated(res, served(article), "Thêm bài viết thành công");
 }
 
 async function updateArticle(req, res) {
-  const article = await articleService.updateArticle(req.params.id, req.body || {});
-  return sendSuccess(res, article, "Cập nhật bài viết thành công");
+  const article = await articleService.updateArticle(
+    req.params.id,
+    dropUnchangedServedImage(req.body || {}, "coverImage"),
+  );
+  return sendSuccess(res, served(article), "Cập nhật bài viết thành công");
 }
 
 async function deleteArticle(req, res) {

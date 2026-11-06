@@ -6,11 +6,21 @@ const { AppError } = require("../utils/AppError");
  * @param {number} options.windowMs - Khung thời gian tính bằng ms (mặc định 15 phút)
  * @param {number} options.max - Số lần gọi tối đa trong khung thời gian
  * @param {string} options.message - Thông báo lỗi khi vượt quá giới hạn
+ * @param {(req) => string | null} [options.key] - Tự chọn khoá đếm, trả null thì bỏ qua
  */
+
+// IP thật của người dùng. KHÔNG đọc thẳng header X-Forwarded-For vì người dùng tự ghi được
+// (đổi header mỗi lần là vượt giới hạn). req.ip đã được Express tính đúng nhờ
+// app.set("trust proxy", 1): chỉ tin giá trị do proxy gần nhất (nginx / Next) thêm vào.
+function getClientIp(req) {
+  return req.ip || req.socket?.remoteAddress || "unknown_ip";
+}
+
 function createRateLimit({
   windowMs = 15 * 60 * 1000,
   max = 10,
   message = "Bạn đã gửi quá nhiều yêu cầu. Vui lòng thử lại sau 15 phút.",
+  key = getClientIp,
 } = {}) {
   const store = new Map();
 
@@ -29,13 +39,10 @@ function createRateLimit({
   }
 
   return function rateLimitMiddleware(req, res, next) {
-    const ip =
-      (typeof req.headers["x-forwarded-for"] === "string"
-        ? req.headers["x-forwarded-for"].split(",")[0].trim()
-        : null) ||
-      req.ip ||
-      req.socket?.remoteAddress ||
-      "unknown_ip";
+    const ip = key(req);
+    if (!ip) {
+      return next();
+    }
 
     const now = Date.now();
     const record = store.get(ip);
